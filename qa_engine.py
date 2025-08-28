@@ -1,4 +1,3 @@
-# qa_engine.py
 import os, re
 from typing import Dict, Any, List, Tuple, Optional
 
@@ -72,7 +71,6 @@ class ProductQASystem:
             self.df = pd.DataFrame(rows) if rows else pd.DataFrame(
                 columns=["Title","Handle","Body (HTML)","Variant Grams","Variant Weight Unit"])
         except Exception as e:
-            # Keep API failures from killing the app
             print("Shopify API load failed:", e, flush=True)
             self.df = pd.DataFrame(columns=["Title","Handle","Body (HTML)","Variant Grams","Variant Weight Unit"])
 
@@ -88,7 +86,6 @@ class ProductQASystem:
         df = self.df
         df['Title'] = df.get('Title', "").fillna('').astype(str)
         df['desc_clean'] = df.get('Body (HTML)', "").fillna('').astype(str).apply(self._clean_html)
-        # Optional metafields if your CSV has them
         if 'Specifications (product.metafields.custom.specifications)' in df.columns:
             df['specs_clean'] = df['Specifications (product.metafields.custom.specifications)'].fillna('').astype(str).apply(self._clean_html)
         else:
@@ -117,7 +114,7 @@ class ProductQASystem:
 
     # ---------- Matching ----------
     def resolve_product_from_url(self, q: str) -> Optional[str]:
-        m = re.search(r"/products/([a-z0-9\\-]+)", q, flags=re.I)
+        m = re.search(r"/products/([a-z0-9\-]+)", q, flags=re.I)
         if not m:
             return None
         handle = m.group(1).lower()
@@ -147,50 +144,50 @@ class ProductQASystem:
         grams = [g for g in info.get('grams', []) if isinstance(g, (int, float)) and g > 0]
         if grams:
             kg = min(grams) / 1000.0
-            return f\"{kg:.1f} kg (approx., from variant data)\"
-        text = \" \".join([info.get('specs',''), info.get('features',''), info.get('desc','')])
-        m = re.search(r\"(?:weight[^A-Za-z0-9]{0,10})?(\\d{1,3}(?:\\.\\d{1,2})?)\\s?(kg|kilograms|g|grams|lbs|lb|pounds)\", text, flags=re.I)
+            return f"{kg:.1f} kg (approx., from variant data)"
+        text = " ".join([info.get('specs',''), info.get('features',''), info.get('desc','')])
+        m = re.search(r"(?:weight[^A-Za-z0-9]{0,10})?(\d{1,3}(?:\.\d{1,2})?)\s?(kg|kilograms|g|grams|lbs|lb|pounds)", text, flags=re.I)
         if m:
             val, unit = m.groups()
             val = float(val)
             unit = unit.lower()
             if unit in ['kg','kilograms']:
-                return f\"{val} kg (from product text)\"
+                return f"{val} kg (from product text)"
             if unit in ['g','grams']:
-                return f\"{val/1000:.1f} kg (from product text)\"
+                return f"{val/1000:.1f} kg (from product text)"
             if unit in ['lbs','lb','pounds']:
-                return f\"{val*0.453592:.1f} kg (converted from {unit}; from product text)\"
+                return f"{val*0.453592:.1f} kg (converted from {unit}; from product text)"
         return None
 
     def _extract_dimensions(self, info: Dict[str, Any]) -> Optional[str]:
-        text = \" \".join([info.get('specs',''), info.get('features',''), info.get('desc','')])
-        m = re.search(r\"(\\d{2,4}(?:\\.\\d{1,2})?)\\s*[x×]\\s*(\\d{2,4}(?:\\.\\d{1,2})?)\\s*[x×]\\s*(\\d{2,4}(?:\\.\\d{1,2})?)\\s*(mm|cm|in|inch|inches)\", text, flags=re.I)
+        text = " ".join([info.get('specs',''), info.get('features',''), info.get('desc','')])
+        m = re.search(r"(\d{2,4}(?:\.\d{1,2})?)\s*[x×]\s*(\d{2,4}(?:\.\d{1,2})?)\s*[x×]\s*(\d{2,4}(?:\.\d{1,2})?)\s*(mm|cm|in|inch|inches)", text, flags=re.I)
         if m:
             l,w,h,unit = m.groups()
-            return f\"{l} x {w} x {h} {unit} (from product text)\"
-        m2 = re.search(r\"dimensions[^:]*:\\s*([^\\n\\r;]+)\", text, flags=re.I)
+            return f"{l} x {w} x {h} {unit} (from product text)"
+        m2 = re.search(r"dimensions[^:]*:\s*([^\n\r;]+)", text, flags=re.I)
         if m2:
-            return f\"{m2.group(1).strip()} (from product text)\"
+            return f"{m2.group(1).strip()} (from product text)"
         return None
 
     def _extract_battery(self, info: Dict[str, Any]) -> Optional[str]:
-        text = \" \".join([info.get('specs',''), info.get('features',''), info.get('desc','')])
-        m = re.search(r\"(battery(?:\\s*life|\\s*run[\\s-]*time)?)\\D{0,12}(\\d{1,2}(?:\\.\\d{1,2})?)\\s*(h|hr|hrs|hour|hours)\", text, flags=re.I)
+        text = " ".join([info.get('specs',''), info.get('features',''), info.get('desc','')])
+        m = re.search(r"(battery(?:\s*life|\s*run[\s-]*time)?)\D{0,12}(\d{1,2}(?:\.\d{1,2})?)\s*(h|hr|hrs|hour|hours)", text, flags=re.I)
         if m:
-            return f\"{m.group(2)} hours (from product text)\"
+            return f"{m.group(2)} hours (from product text)"
         return None
 
     def _extract_flow(self, info: Dict[str, Any]) -> Optional[str]:
-        text = \" \".join([info.get('specs',''), info.get('features',''), info.get('desc','')]).lower()
+        text = " ".join([info.get('specs',''), info.get('features',''), info.get('desc','')]).lower()
         tags = []
         if 'continuous flow' in text or 'continuous-flow' in text:
             tags.append('continuous flow')
         if 'pulse flow' in text or 'pulse-dose' in text or 'pulse mode' in text:
             tags.append('pulse flow')
-        m = re.search(r\"(\\d(?:\\.\\d)?)\\s*(l\\/?min|lpm|litres per minute)\", text, flags=re.I)
-        rate = f\"{m.group(1)} {m.group(2).upper()}\" if m else None
+        m = re.search(r"(\d(?:\.\d)?)\s*(l\/?min|lpm|litres per minute)", text, flags=re.I)
+        rate = f"{m.group(1)} {m.group(2).upper()}" if m else None
         if tags or rate:
-            return (\", \".join(tags) + (f\" ({rate})\" if rate else \"\")) if tags else rate
+            return (", ".join(tags) + (f" ({rate})" if rate else "")) if tags else rate
         return None
 
     # ---------- Answer ----------
@@ -206,46 +203,46 @@ class ProductQASystem:
 
         if not product_title:
             return {
-                \"ok\": False,
-                \"answer\": \"I couldn’t find that product. Please share the exact product name or a link to the product page.\",
-                \"suggestions\": suggestions,
-                \"confidence\": 0
+                "ok": False,
+                "answer": "I couldn’t find that product. Please share the exact product name or a link to the product page.",
+                "suggestions": suggestions,
+                "confidence": 0
             }
 
         info = self.product_groups[product_title]
         # attribute guess
-        attr = \"general\"
+        attr = "general"
         if any(k in q_l for k in ['weight','weigh','kg','grams']):
-            attr = \"weight\"
+            attr = "weight"
         elif any(k in q_l for k in ['dimension','size','width','height','length','depth','folded']):
-            attr = \"dimensions\"
+            attr = "dimensions"
         elif any(k in q_l for k in ['battery','runtime','run time','hours']):
-            attr = \"battery\"
+            attr = "battery"
         elif any(k in q_l for k in ['flow','l/min','lpm','litres per minute','continuous','pulse']):
-            attr = \"flow\"
+            attr = "flow"
 
         extractors = {
-            \"weight\": self._extract_weight,
-            \"dimensions\": self._extract_dimensions,
-            \"battery\": self._extract_battery,
-            \"flow\": self._extract_flow
+            "weight": self._extract_weight,
+            "dimensions": self._extract_dimensions,
+            "battery": self._extract_battery,
+            "flow": self._extract_flow
         }
 
         if attr in extractors:
             val = extractors[attr](info)
             conf = self._confidence(q, product_title)
             if val:
-                return {\"ok\": True, \"product\": product_title, \"attribute\": attr, \"value\": val,
-                        \"confidence\": conf,
-                        \"answer\": f\"{attr.capitalize()} for **{product_title}**: {val}\"}
+                return {"ok": True, "product": product_title, "attribute": attr, "value": val,
+                        "confidence": conf,
+                        "answer": f"{attr.capitalize()} for **{product_title}**: {val}"}
             else:
-                return {\"ok\": False, \"product\": product_title, \"attribute\": attr, \"confidence\": conf,
-                        \"answer\": f\"I couldn’t find {attr} details for **{product_title}** in the current data.\"}
+                return {"ok": False, "product": product_title, "attribute": attr, "confidence": conf,
+                        "answer": f"I couldn’t find {attr} details for **{product_title}** in the current data."}
 
         # general fallback
         short = info.get('desc','')[:300]
         if len(info.get('desc','')) > 300:
-            short += \"...\"
+            short += "..."
         conf = self._confidence(q, product_title)
-        return {\"ok\": True, \"product\": product_title, \"attribute\": \"general\", \"confidence\": conf,
-                \"answer\": f\"I found **{product_title}**. Here’s a quick overview: {short}\"}
+        return {"ok": True, "product": product_title, "attribute": "general", "confidence": conf,
+                "answer": f"I found **{product_title}**. Here’s a quick overview: {short}"}
