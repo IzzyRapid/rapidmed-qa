@@ -1,21 +1,37 @@
-from flask import Flask, request, jsonify
-from qa_engine import QAEngine
+# app.py  (FastAPI)
+import os
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import Optional, List
+from qa_engine import ProductQASystem
 
-app = Flask(__name__)
-qa_engine = QAEngine()
+CSV_PATH = os.environ.get("SHOPIFY_CSV_PATH", "products_export.csv")
+qa = ProductQASystem(csv_path=CSV_PATH)
 
-@app.route('/health')
+app = FastAPI(title="Rapid Medical QA", version="0.2.0")
+
+class AskRequest(BaseModel):
+    question: str
+
+class AskResponse(BaseModel):
+    ok: bool
+    answer: str
+    product: Optional[str] = None
+    attribute: Optional[str] = None
+    value: Optional[str] = None
+    suggestions: Optional[List[str]] = None
+    confidence: Optional[int] = None
+
+@app.get("/health")
 def health():
-    return jsonify({"ok": True, "mode": "api"})
+    return {"ok": True, "mode": os.environ.get("SHOPIFY_MODE","csv")}
 
-@app.route('/ask', methods=['POST'])
-def ask():
-    data = request.get_json()
-    question = data.get("question", "")
-    answer, conf = qa_engine.answer_question(question)
-    return jsonify({"answer": answer, "confidence": conf})
+@app.post("/reload")
+def reload_data():
+    qa.reload()
+    return {"ok": True, "message": "Data reloaded"}
 
-@app.route('/reload', methods=['POST'])
-def reload():
-    qa_engine.reload_products()
-    return jsonify({"ok": True})
+@app.post("/ask", response_model=AskResponse)
+def ask(req: AskRequest):
+    result = qa.answer(req.question)
+    return AskResponse(**result)
